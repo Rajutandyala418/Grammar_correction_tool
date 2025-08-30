@@ -153,6 +153,8 @@ def speech_output():
     except Exception as e:
         print("Error in /speech_output:", e)
         return jsonify({"audio_base64": ""})
-
+        
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000)
+
+
