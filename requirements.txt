@@ -1,0 +1,8 @@
+pip install Flask
+pip install flask-cors
+pip install spacy
+python -m spacy download en_core_web_sm
+pip install openai
+pip install gTTS
+pip install deep-translator
+pip install requests
