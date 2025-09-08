@@ -58,3 +58,11 @@ feature to input the sentence through speech as well as display the parts of spe
 
 # for every output processing the history will automatically saved to database for future use.
 
+# offline grammar correction does not give the exact response it makes mistakes for such that grammar mistakes as well as incorrect way understand so it is prefer to use the open ai apikey so place the open ai api key you can create your own api key from these steps :
+
+https://platform.openai.com/api-keys
+Click “Create new secret key”.
+Give it a name (for example: FlaskGrammarApp).
+Copy the key shown (it starts with sk-... or sk-proj-...).
+⚠️ You’ll only see it once — so save it securely.
+Replace your hardcoded OPENAI_KEY in the script with this key.
