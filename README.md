@@ -1,6 +1,10 @@
 # Grammar_correction_tool
 Grammar_correction_tool using natural language processing to automatically correct the incorrect sentence and also translate the corrected sentence into different indian languages and also additional features such as pos_tags and speech recognition and speech out as well as save the history along with login authentication .
 
+I deploy this project online here is the reference link to use this project : https://grammarcorrectiontool.free.nf/
+
+As well as i upload the .apk file to deploy this project as app to install the app and use it as normal app 
+
 The Architecture of the project.
 
 index page ---> Login page and Register page
