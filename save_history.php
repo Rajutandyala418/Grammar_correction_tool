@@ -1,30 +1,30 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+session_start();
+include("validate_token.php");
+require_once __DIR__ . "/include/db_connect.php";
+
 if (!isset($_SESSION['user_id'])) {
-    http_response_code(401);
-    echo json_encode(["error" => "Unauthorized"]);
+    echo "Unauthorized";
     exit();
 }
 
-$data = json_decode(file_get_contents("php://input"), true);
-$input_text = $data['input_text'] ?? '';
-$output_text = $data['output_text'] ?? '';
+if (!isset($_POST['input_text']) || !isset($_POST['output_text'])) {
+    echo "Missing data";
+    exit();
+}
+
 $user_id = $_SESSION['user_id'];
+$input   = trim($_POST['input_text']);
+$output  = trim($_POST['output_text']);
 
-$mysqli = new mysqli("localhost", "root", "", "grammar_tool");
-if ($mysqli->connect_error) {
-    http_response_code(500);
-    echo json_encode(["error" => "DB connection failed"]);
-    exit();
+$stmt = $conn->prepare("INSERT INTO history (user_id, input_text, output_text) VALUES (?, ?, ?)");
+$stmt->bind_param("iss", $user_id, $input, $output);
+
+if($stmt->execute()){
+    echo "OK";
+} else {
+    echo "DB ERROR";
 }
 
-$stmt = $mysqli->prepare("INSERT INTO history (user_id, input_text, output_text) VALUES (?, ?, ?)");
-$stmt->bind_param("sss", $user_id, $input_text, $output_text);
-$stmt->execute();
 $stmt->close();
-$mysqli->close();
-
-echo json_encode(["success" => true]);
-?>
+$conn->close();

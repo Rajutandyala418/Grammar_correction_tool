@@ -1,57 +1,62 @@
 <?php
 include(__DIR__ . '/include/db_connect.php');
 
-$message = '';
-$username = '';
-$email = '';
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'];
 
     if ($action === 'username') {
         $phone = trim($_POST['phone']);
-        $stmt = $conn->prepare("SELECT username, email FROM users WHERE phone = ?");
-        if ($stmt) {
-            $stmt->bind_param("s", $phone);
-            $stmt->execute();
-            $stmt->store_result();
+        $emailInput = trim($_POST['email']);
 
-            if ($stmt->num_rows > 0) {
-                $stmt->bind_result($username, $email);
-                $stmt->fetch();
-                $message = "✅ Account Found:<br><strong>Username:</strong> " . htmlspecialchars($username) . 
-                           "<br><strong>Email:</strong> " . htmlspecialchars($email);
-            } else {
-                $message = "❌ No account found for this phone number.";
-            }
-            $stmt->close();
-        } else {
-            $message = "❌ Query error: " . $conn->error;
+        if ($phone === "" && $emailInput === "") {
+            echo json_encode(["status" => "error", "message" => "Please enter Phone OR Email"]);
+            exit;
         }
 
-    } elseif ($action === 'password') {
+        if ($phone !== "") {
+            $stmt = $conn->prepare("SELECT username, email FROM users WHERE phone = ?");
+            $stmt->bind_param("s", $phone);
+        } else {
+            $stmt = $conn->prepare("SELECT username, email FROM users WHERE email = ?");
+            $stmt->bind_param("s", $emailInput);
+        }
+
+        $stmt->execute();
+        $stmt->store_result();
+
+        if ($stmt->num_rows > 0) {
+            $stmt->bind_result($username, $email);
+            $stmt->fetch();
+            echo json_encode([
+                "status" => "success",
+                "username" => $username,
+                "email" => $email
+            ]);
+        } else {
+            echo json_encode(["status" => "error", "message" => "No account found"]);
+        }
+        exit;
+    }
+
+    elseif ($action === 'password') {
         $username = trim($_POST['username']);
         $email = trim($_POST['email']);
         $phone = trim($_POST['phone']);
 
-        // ✅ Fix: use user_id instead of id
-        $stmt = $conn->prepare("SELECT user_id FROM users WHERE username = ? AND email = ? AND phone = ?");
-        if ($stmt) {
-            $stmt->bind_param("sss", $username, $email, $phone);
-            $stmt->execute();
-            $stmt->store_result();
+        $stmt = $conn->prepare("SELECT id FROM users WHERE username = ? AND email = ? AND phone = ?");
+        $stmt->bind_param("sss", $username, $email, $phone);
+        $stmt->execute();
+        $stmt->store_result();
 
-            if ($stmt->num_rows > 0) {
-                // ✅ Redirect to update_password.php with username
-                header("Location: update_password.php?username=" . urlencode($username));
-                exit();
-            } else {
-                $message = "❌ No account matches the provided details.";
-            }
-            $stmt->close();
+        if ($stmt->num_rows > 0) {
+            echo json_encode([
+                "status" => "redirect",
+                "url" => "update_password.php?username=" . urlencode($username)
+            ]);
         } else {
-            $message = "❌ Query error: " . $conn->error;
+            echo json_encode(["status" => "error", "message" => "No matching account found"]);
         }
+        exit;
     }
 }
 ?>
@@ -59,133 +64,299 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Forgot Username/Password</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forgot Username / Password</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
 
-    body {
-        font-family: 'Poppins', sans-serif;
-        margin: 0;
-        color: white;
-        background: linear-gradient(
-            135deg,
-            #ff0000, #ff7f00, #ffff00, #7fff00, #00ff00,
-            #00ff7f, #00ffff, #007fff, #0000ff, #7f00ff,
-            #ff00ff, #ff007f, #ff6666, #ff9966, #ffcc66,
-            #ccff66, #66ff66, #66ffcc, #66ccff, #6699ff,
-            #6666ff, #9966ff, #cc66ff, #ff66ff, #ff66cc
-        );
-        background-size: 400% 400%;
-        animation: gradientAnimation 20s ease infinite;
-        min-height: 100vh;
-        overflow-y: auto;
-    }
-    @keyframes gradientAnimation {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
-    }
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:'Poppins',sans-serif;
+}
 
-    .forgot-box {
-        background: rgba(0,0,0,0.5);
-        border-radius: 12px;
-        width: 500px;
-        margin: 100px auto;
-        padding: 30px;
-        text-align: center;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-        position: relative;
-    }
+body{
+    background:#e8f0f7;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    padding:15px;
+}
 
-    h2 { margin-bottom: 20px; }
+.forgot-box{
+    background:#ffffff;
+    border:1px solid #d7e0ea;
+    padding:25px;
+    border-radius:14px;
+    width:100%;
+    max-width:420px;
+    box-shadow:0 4px 15px rgba(0,0,0,0.06);
+    position:relative;
+}
 
-    select, input, button {
-        width: 100%;
-        padding: 12px;
-        margin: 10px 0;
-        border-radius: 6px;
-        border: none;
-        font-size: 1rem;
-    }
-    select, input { background: #fff; color: #333; }
-    button {
-        background: linear-gradient(90deg, #ff512f, #dd2476);
-        color: white;
-        cursor: pointer;
-        transition: 0.3s;
-    }
-    button:hover { background: linear-gradient(90deg, #dd2476, #ff512f); }
+.back-btn{
+    position:absolute;
+    top:15px;
+    right:15px;
+    background:#1e3c57;
+    color:#fff;
+    border:none;
+    font-size:14px;
+    padding:8px 16px;
+    border-radius:8px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    font-weight:600;
+}
 
-    .message { 
-        font-size: 0.95rem; 
-        margin-top: 10px; 
-        color: white; 
-    }
+.back-btn i{
+    font-size:16px;
+}
 
-    .back-btn {
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 10px 20px;
-        background: linear-gradient(90deg, #ff512f, #dd2476);
-        color: #fff;
-        text-decoration: none;
-        border-radius: 6px;
-        font-weight: 600;
-    }
-    .back-btn:hover { opacity: 0.85; }
+.back-btn:hover{
+    background:#264a6e;
+}
 
-    .form-section { display: none; }
-    .active { display: block; }
+h2{
+    text-align:center;
+    margin-top:40px;
+    margin-bottom:20px;
+    font-size:1.7rem;
+    color:#1e3c57;
+    font-weight:700;
+}
+
+.input-group{
+    margin-bottom:14px;
+}
+
+.input-group label{
+    margin-bottom:6px;
+    font-weight:500;
+    color:#1e3c57;
+    font-size:0.95rem;
+    display:block;
+}
+
+select, input{
+    width:100%;
+    padding:11px;
+    border-radius:8px;
+    border:1px solid #b9c7d8;
+    font-size:0.95rem;
+    outline:none;
+    background:#fff;
+    color:#000;
+}
+
+select:focus, input:focus{
+    border-color:#0072ff;
+}
+
+select::placeholder, input::placeholder{
+    color:#9bb1c7;
+    font-size:0.9rem;
+}
+
+button[type="submit"]{
+    width:100%;
+    padding:12px;
+    border:none;
+    border-radius:8px;
+    font-size:1rem;
+    background:#1e3c57;
+    color:#fff;
+    font-weight:600;
+    cursor:pointer;
+    margin-top:8px;
+}
+
+button[type="submit"]:hover{
+    background:#264a6e;
+}
+
+.form-section { display: none; }
+.active { display: block; }
+
+.popup{
+    position:fixed;
+    inset:0;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    background:rgba(0,0,0,0.55);
+    z-index:9999;
+    display:none;
+}
+
+.popup-content{
+    background:#ffffff;
+    padding:22px 26px;
+    border-radius:14px;
+    text-align:center;
+    max-width:360px;
+    width:90%;
+    color:#1e3c57;
+    font-weight:600;
+    box-shadow:0 4px 18px rgba(0,0,0,0.18);
+    border:1px solid #d7e0ea;
+}
+
+.popup button{
+    margin-top:15px;
+    padding:9px 20px;
+    background:#1e3c57;
+    border-radius:8px;
+    border:none;
+    color:#fff;
+    cursor:pointer;
+    font-size:0.95rem;
+    font-weight:600;
+    width:100%;
+}
+
+.popup button:hover{
+    background:#264a6e;
+}
+
+@media(max-width:480px){
+    .forgot-box{
+        padding:20px;
+        border-radius:12px;
+        max-width:100%;
+    }
+    h2{
+        font-size:1.5rem;
+    }
+    button[type="submit"]{
+        font-size:0.95rem;
+        padding:11px;
+    }
+    .back-btn{
+        padding:7px 14px;
+        font-size:13px;
+    }
+}
 </style>
 </head>
+
 <body>
 
-<a href="login.php" class="back-btn">Back to Login</a>
-
 <div class="forgot-box">
-    <h2>Forgot Username / Password</h2>
-    <?php if ($message): ?>
-        <p class="message"><?php echo $message; ?></p>
-    <?php endif; ?>
 
-    <select id="forgotType">
-        <option value="username" selected>Forgot Username</option>
-        <option value="password">Forgot Password</option>
-    </select>
+<button class="back-btn" onclick="window.location.href='login.php'">
+    <i class="fa fa-arrow-left"></i> Back
+</button>
 
-    <!-- Forgot Username Form -->
-    <form method="post" id="formUsername" class="form-section active">
-        <input type="hidden" name="action" value="username">
-        <input type="text" name="phone" placeholder="Enter Phone Number" required>
-        <button type="submit">Find Username</button>
-    </form>
+<h2>Forgot Username / Password</h2>
 
-    <!-- Forgot Password Form -->
-    <form method="post" id="formPassword" class="form-section">
-        <input type="hidden" name="action" value="password">
+<select id="forgotType" class="input-group">
+    <option value="username">Forgot Username</option>
+    <option value="password">Forgot Password</option>
+</select>
+
+<form id="formUsername" class="form-section active">
+    <div class="input-group">
+        <label>Phone Number (optional)</label>
+        <input type="text" name="phone" placeholder="Enter Phone Number">
+    </div>
+    <div class="input-group">
+        <label>Email (optional)</label>
+        <input type="email" name="email" placeholder="Enter Email">
+    </div>
+    <input type="hidden" name="action" value="username">
+    <button type="submit">Find Username</button>
+</form>
+
+<form id="formPassword" class="form-section">
+    <div class="input-group">
+        <label>Username</label>
         <input type="text" name="username" placeholder="Enter Username" required>
-        <input type="email" name="email" placeholder="Enter Email" required>
+    </div>
+    <div class="input-group">
+        <label>Registered Email</label>
+        <input type="email" name="email" placeholder="Enter Registered Email" required>
+    </div>
+    <div class="input-group">
+        <label>Phone Number</label>
         <input type="text" name="phone" placeholder="Enter Phone Number" required>
-        <button type="submit">Reset Password</button>
-    </form>
+    </div>
+    <input type="hidden" name="action" value="password">
+    <button type="submit">Reset Password</button>
+</form>
+
+</div>
+
+<div class="popup" id="popupBox">
+    <div class="popup-content">
+        <p id="popupText"></p>
+        <button onclick="closePopup()">OK</button>
+    </div>
 </div>
 
 <script>
-    const selectBox = document.getElementById('forgotType');
-    const formUsername = document.getElementById('formUsername');
-    const formPassword = document.getElementById('formPassword');
+const selectBox = document.getElementById('forgotType');
+const formUsername = document.getElementById('formUsername');
+const formPassword = document.getElementById('formPassword');
+const popup = document.getElementById('popupBox');
+const popupText = document.getElementById('popupText');
 
-    selectBox.addEventListener('change', function() {
-        if (this.value === 'username') {
-            formUsername.classList.add('active');
-            formPassword.classList.remove('active');
-        } else {
-            formPassword.classList.add('active');
-            formUsername.classList.remove('active');
+selectBox.addEventListener('change', () => {
+    if (selectBox.value === "username") {
+        formUsername.classList.add("active");
+        formPassword.classList.remove("active");
+    } else {
+        formPassword.classList.add("active");
+        formUsername.classList.remove("active");
+    }
+});
+
+function showPopup(message) {
+    popupText.innerHTML = message;
+    popup.style.display = "flex";
+}
+
+function closePopup() {
+    popup.style.display = "none";
+}
+
+function submitForm(form) {
+    const data = new FormData(form);
+    fetch("", {
+        method: "POST",
+        body: data
+    })
+    .then(res => res.json())
+    .then(res => {
+        if (res.status === "success") {
+            showPopup("Username: <strong>" + res.username + "</strong><br>Email: <strong>" + res.email + "</strong>");
+        }
+        else if (res.status === "error") {
+            showPopup(res.message);
+        }
+        else if (res.status === "redirect") {
+            window.location.href = res.url;
         }
     });
+}
+
+formUsername.addEventListener("submit", e => {
+    e.preventDefault();
+    submitForm(formUsername);
+});
+
+formPassword.addEventListener("submit", e => {
+    e.preventDefault();
+    submitForm(formPassword);
+});
 </script>
 
 </body>
 </html>
+

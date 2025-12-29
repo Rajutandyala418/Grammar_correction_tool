@@ -1,188 +1,321 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+include("validate_token.php");
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit();
 }
-
+if (session_status() === PHP_SESSION_NONE) session_start();
 require_once __DIR__ . "/include/db_connect.php";
 
-// ✅ Check if user is logged in
-if (!isset($_SESSION['username'])) {
-    die("Unauthorized access. Please <a href='login.php'>login</a> first.");
-}
+if (!isset($_SESSION['username'])) die("Unauthorized access.");
 
-$username = $_SESSION['username']; // ✅ Consistent with login session
-
+$username = $_SESSION['username'];
+$popupMessage = "";
+$showPopup = false;
+$isSuccess = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $password = $_POST['password'];
-    $confirm_password = $_POST['confirm_password'];
+    $password = trim($_POST['password']);
+    $confirm_password = trim($_POST['confirm_password']);
 
     if ($password !== $confirm_password) {
-        $error = "Passwords do not match!";
-    } else {
+        $popupMessage = "❌ Passwords do not match!";
+        $showPopup = true;
+    }
+    elseif (!preg_match("/(?=.*[0-9])/", $password)) {
+        $popupMessage = "❌ Password must contain at least one digit.";
+        $showPopup = true;
+    }
+    elseif (!preg_match("/(?=.*[A-Z])/", $password)) {
+        $popupMessage = "❌ Password must contain at least one uppercase letter.";
+        $showPopup = true;
+    }
+    elseif (!preg_match("/(?=.*[a-z])/", $password)) {
+        $popupMessage = "❌ Password must contain at least one lowercase letter.";
+        $showPopup = true;
+    }
+    elseif (!preg_match("/(?=.*[\W])/", $password)) {
+        $popupMessage = "❌ Password must contain at least one special character.";
+        $showPopup = true;
+    }
+    elseif (strlen($password) < 8) {
+        $popupMessage = "❌ Password must be at least 8 characters long.";
+        $showPopup = true;
+    }
+    else {
         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-
         $stmt = $conn->prepare("UPDATE users SET password = ? WHERE username = ?");
         $stmt->bind_param("ss", $hashedPassword, $username);
 
         if ($stmt->execute()) {
-            echo "
-            <div id='popup'>
-                <h2>Password Updated Successfully!</h2>
-                <p>Redirecting to login page in <span id='countdown'>5</span> seconds...</p>
-            </div>
-            <script>
-                let seconds = 5;
-                const countdown = document.getElementById('countdown');
-                const popup = document.getElementById('popup');
-                popup.style.display = 'block';
-
-                const timer = setInterval(() => {
-                    seconds--;
-                    countdown.textContent = seconds;
-                    if(seconds <= 0){
-                        clearInterval(timer);
-                        window.location.href = 'login.php'; // ✅ redirect to login page
-                    }
-                }, 1000);
-            </script>
-            <style>
-                #popup {
-                    position: fixed;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    background: linear-gradient(
-                        135deg,
-                        #ff0000, #ff7f00, #ffff00, #7fff00, #00ff00,
-                        #00ff7f, #00ffff, #007fff, #0000ff, #7f00ff,
-                        #ff00ff, #ff007f, #ff6666, #ff9966, #ffcc66,
-                        #ccff66, #66ff66, #66ffcc, #66ccff, #6699ff,
-                        #6666ff, #9966ff, #cc66ff, #ff66ff, #ff66cc
-                    );
-                    padding: 20px;
-                    border-radius: 10px;
-                    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-                    text-align: center;
-                    z-index: 9999;
-                    color: #fff;
-                }
-            </style>
-            ";
-            exit();
+            $popupMessage = "🎉 Password Updated Successfully! Redirecting to Dashboard...";
+            $showPopup = true;
+            $isSuccess = true;
         } else {
-            $error = "Error updating password!";
+            $popupMessage = "❌ Error updating password!";
+            $showPopup = true;
         }
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Account Settings</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: linear-gradient(
-                135deg,
-                #ff0000, #ff7f00, #ffff00, #7fff00, #00ff00,
-                #00ff7f, #00ffff, #007fff, #0000ff, #7f00ff,
-                #ff00ff, #ff007f, #ff6666, #ff9966, #ffcc66,
-                #ccff66, #66ff66, #66ffcc, #66ccff, #6699ff,
-                #6666ff, #9966ff, #cc66ff, #ff66ff, #ff66cc
-            );
-            animation: gradientAnimation 20s ease infinite;
-            margin: 0;
-            padding: 0;
-            height: 100vh;
-        }
-        @keyframes gradientAnimation {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-        }
-        .container {
-            background-color: rgba(255, 255, 255, 0.2);
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-            max-width: 450px;
-            margin: 80px auto;
-            text-align: center;
-            color: #fff;
-        }
-        .form-group {
-            display: flex;
-            align-items: center;
-            margin-bottom: 15px;
-            justify-content: space-between;
-        }
-        label {
-            flex: 1;
-            margin-right: 10px;
-            font-weight: bold;
-            text-align: right;
-        }
-        input {
-            flex: 2;
-            padding: 10px;
-            border: none;
-            border-radius: 5px;
-        }
-        button {
-            background: #007BFF;
-            color: white;
-            padding: 10px 15px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            width: 100%;
-            font-size: 16px;
-        }
-        button:hover {
-            background: #0056b3;
-        }
-        .error-msg {
-            color: yellow;
-            margin-bottom: 10px;
-        }
-   .back-to-main {
-            position: absolute;
-            top: 20px;
-            right: 30px;
-            padding: 10px 20px;
-            background: linear-gradient(90deg, #ff512f, #dd2476);
-            color: #fff;
-            text-decoration: none;
-            border-radius: 6px;
-            font-weight: 600;
-        }
-    </style>
-</head>
-<body>
-<a href="dashboard.php" class="back-to-main">Back to dashboard Page</a>
+<meta charset="UTF-8">
+<title>Account Settings</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:'Poppins',sans-serif;
+}
+
+body{
+    background:#e8f0f7;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    padding:15px;
+}
+
+.container{
+    background:#ffffff;
+    border:1px solid #d7e0ea;
+    padding:25px;
+    border-radius:14px;
+    width:100%;
+    max-width:420px;
+    box-shadow:0 4px 15px rgba(0,0,0,0.06);
+    position:relative;
+}
+
+.back-btn{
+    position:absolute;
+    top:15px;
+    right:15px;
+    background:#1e3c57;
+    color:#fff;
+    border:none;
+    font-size:14px;
+    padding:8px 16px;
+    border-radius:8px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    font-weight:600;
+}
+
+.back-btn i{
+    font-size:16px;
+}
+
+.back-btn:hover{
+    background:#264a6e;
+}
+
+.container h2{
+    text-align:center;
+    margin-top:40px;
+    margin-bottom:20px;
+    font-size:1.7rem;
+    color:#1e3c57;
+    font-weight:700;
+}
+
+.form-group{
+    margin-bottom:14px;
+    display:flex;
+    flex-direction:column;
+}
+
+label{
+    margin-bottom:6px;
+    font-weight:500;
+    color:#1e3c57;
+    font-size:0.95rem;
+}
+
+input{
+    padding:11px;
+    border-radius:8px;
+    border:1px solid #b9c7d8;
+    font-size:0.95rem;
+    outline:none;
+    background:#fff;
+    color:#000;
+    width:100%;
+}
+
+input:focus{
+    border-color:#0072ff;
+}
+
+input[readonly]{
+    background:#f0f4f8;
+    font-weight:600;
+    color:#1e3c57;
+}
+
+input::placeholder{
+    color:#9bb1c7;
+    font-size:0.9rem;
+}
+
+button[type="submit"]{
+    width:100%;
+    padding:12px;
+    border:none;
+    border-radius:8px;
+    font-size:1rem;
+    background:#1e3c57;
+    color:#fff;
+    font-weight:600;
+    cursor:pointer;
+    margin-top:8px;
+}
+
+button[type="submit"]:hover{
+    background:#264a6e;
+}
+
+.popup-bg {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.popup-box {
+    background: #ffffff;
+    border:1px solid #d7e0ea;
+    width: 90%;
+    max-width: 350px;
+    padding: 22px 26px;
+    border-radius: 14px;
+    text-align: center;
+    color: #1e3c57;
+    font-weight: 600;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.18);
+}
+
+.popup-box button {
+    margin-top: 15px;
+    padding: 9px 20px;
+    border-radius: 8px;
+    border: none;
+    background: #1e3c57;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.95rem;
+    width: 100%;
+}
+
+.popup-box button:hover {
+    background: #264a6e;
+}
+
+@media(max-width:480px){
+    .container{
+        padding:20px;
+        border-radius:12px;
+        max-width:100%;
+    }
+    .container h2{
+        font-size:1.5rem;
+    }
+    button[type="submit"]{
+        font-size:0.95rem;
+        padding:11px;
+    }
+    .back-btn{
+        padding:7px 14px;
+        font-size:13px;
+    }
+}
+</style>
+</head>
+
+<body>
 
 <div class="container">
-    <h2>Account Settings</h2>
-    <?php if(isset($error)) echo "<div class='error-msg'>$error</div>"; ?>
-    <form method="POST">
-        <div class="form-group">
-            <label>Username:</label>
-            <input type="text" value="<?php echo htmlspecialchars($username); ?>" readonly>
-        </div>
-        <div class="form-group">
-            <label>New Password:</label>
-            <input type="password" name="password" required placeholder="Enter new password">
-        </div>
-        <div class="form-group">
-            <label>Confirm Password:</label>
-            <input type="password" name="confirm_password" required placeholder="Re-enter password">
-        </div>
-        <button type="submit">Update Password</button>
-    </form>
+
+<button class="back-btn" onclick="window.location.href='dashboard.php'">
+    <i class="fa fa-arrow-left"></i> Back
+</button>
+
+<h2>Account Settings</h2>
+
+<form method="POST">
+    <div class="form-group">
+        <label>Username:</label>
+        <input type="text" value="<?= htmlspecialchars($username); ?>" readonly>
+    </div>
+
+    <div class="form-group">
+        <label>New Password:</label>
+        <input type="password" name="password" required placeholder="Enter new password">
+    </div>
+
+    <div class="form-group">
+        <label>Confirm Password:</label>
+        <input type="password" name="confirm_password" required placeholder="Re-enter password">
+    </div>
+
+    <button type="submit">Update Password</button>
+</form>
+
 </div>
+
+<?php if($showPopup): ?>
+<div class="popup-bg" id="popupBox">
+    <div class="popup-box">
+        <p><?= $popupMessage ?></p>
+
+        <?php if($isSuccess): ?>
+            <p>Redirecting in <span id="countdown">5</span> seconds...</p>
+        <?php endif; ?>
+
+        <button id="popupBtn">
+            OK
+        </button>
+    </div>
+</div>
+
+<script>
+const popupBtn = document.getElementById("popupBtn");
+const popupBox = document.getElementById("popupBox");
+
+<?php if($isSuccess): ?>
+let sec = 5;
+let cd = document.getElementById("countdown");
+let timer = setInterval(() => {
+    sec--;
+    cd.textContent = sec;
+    if(sec <= 0){
+        clearInterval(timer);
+        window.location.href = "dashboard.php";
+    }
+}, 1000);
+
+popupBtn.onclick = () => window.location.href = "dashboard.php";
+<?php else: ?>
+popupBtn.onclick = () => popupBox.style.display = "none";
+<?php endif; ?>
+</script>
+<?php endif; ?>
+
 </body>
 </html>
+

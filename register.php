@@ -1,335 +1,418 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+if (session_status() === PHP_SESSION_NONE) session_start();
 include(__DIR__ . '/include/db_connect.php');
 
-$message = '';
-$registration_success = false;
+$popup_message = "";
+$show_popup = false;
+$redirect_time = 5;
+$inline_error = "";
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $first_name = trim($_POST['first_name']);
-    $last_name = trim($_POST['last_name']);
-    $username = trim($_POST['username']);
-    $email = trim($_POST['email']);
-    $phone = trim($_POST['phone']);
-    $password = trim($_POST['password']);
-    $confirm_password = trim($_POST['confirm_password']);
+if ($_SERVER["REQUEST_METHOD"] === "POST" && !isset($_POST["live_check"])) {
 
-    // Password validation
-    $password_pattern = '/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/';
+    $first_name = trim($_POST["first_name"]);
+    $last_name  = trim($_POST["last_name"]);
+    $email      = trim($_POST["email"]);
+    $phone      = trim($_POST["phone"]);
+    $username   = trim($_POST["username"]);
+    $password   = $_POST["password"];
+    $confirm_password = $_POST["confirm_password"];
+
     if ($password !== $confirm_password) {
-        $message = "Passwords do not match.";
-    } elseif (!preg_match($password_pattern, $password)) {
-        $message = "Password must be at least 8 characters long, include upper and lower case letters, a number, and a special character.";
+        $inline_error = "❌ Password and Confirm Password do not match.";
     } else {
-        // Check if username, email or phone already exists
-        $stmt_check = $conn->prepare("SELECT username, email, phone FROM users WHERE username = ? OR email = ? OR phone = ?");
-        $stmt_check->bind_param("sss", $username, $email, $phone);
-        $stmt_check->execute();
-        $result_check = $stmt_check->get_result();
+        $check_stmt = $conn->prepare("SELECT * FROM users WHERE email=? OR phone=? OR username=?");
+        $check_stmt->bind_param("sss", $email, $phone, $username);
+        $check_stmt->execute();
+        $result = $check_stmt->get_result();
 
-        $exists_username = false;
-        $exists_email = false;
-        $exists_phone = false;
-
-        while ($row = $result_check->fetch_assoc()) {
-            if ($row['username'] === $username) {
-                $exists_username = true;
-            }
-            if ($row['email'] === $email) {
-                $exists_email = true;
-            }
-            if ($row['phone'] === $phone) {
-                $exists_phone = true;
-            }
-        }
-        $stmt_check->close();
-
-        if ($exists_username) {
-            $message = "Username already exists. Please choose another.";
-        } elseif ($exists_email) {
-            $message = "Email already exists. Please use another email.";
-        } elseif ($exists_phone) {
-            $message = "Phone number already exists. Please use another phone number.";
+        if ($result->num_rows > 0) {
+            $inline_error = "❌ Email, Phone or Username already exists!";
         } else {
-            // Hash the password
             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-
-            // Insert user
-            $stmt = $conn->prepare("INSERT INTO users (first_name, last_name, username, email, phone, password) VALUES (?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("ssssss", $first_name, $last_name, $username, $email, $phone, $hashed_password);
+            $stmt = $conn->prepare("INSERT INTO users (first_name, last_name, email, phone, username, password) 
+                                    VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("ssssss", $first_name, $last_name, $email, $phone, $username, $hashed_password);
 
             if ($stmt->execute()) {
-                $message = "Registration successful! You can now log in.";
-                $registration_success = true;
+                $popup_message = "🎉 Registration Successful! Redirecting to Login in <span id='countdown'>$redirect_time</span> seconds...";
+                $show_popup = true;
             } else {
-                $message = "Error occurred during registration. Please try again.";
+                $inline_error = "❌ Error: " . $stmt->error;
             }
-            $stmt->close();
         }
+        $check_stmt->close();
     }
 }
 
-// Handle AJAX check
-if (isset($_GET['check_field']) && isset($_GET['value'])) {
-    $field = $_GET['check_field'];
-    $value = trim($_GET['value']);
-    if (!in_array($field, ['username', 'email', 'phone'])) {
-        echo json_encode(["status" => "invalid"]);
-        exit;
-    }
+if (isset($_POST["live_check"])) {
+    $value = trim($_POST["value"]);
+    $type  = trim($_POST["type"]);
 
-    $stmt = $conn->prepare("SELECT $field FROM users WHERE $field = ?");
+    if ($type === "email") $sql = "SELECT * FROM users WHERE email=?";
+    elseif ($type === "phone") $sql = "SELECT * FROM users WHERE phone=?";
+    else $sql = "SELECT * FROM users WHERE username=?";
+
+    $stmt = $conn->prepare($sql);
     $stmt->bind_param("s", $value);
     $stmt->execute();
-    $result = $stmt->get_result();
-    if ($result->num_rows > 0) {
-        echo json_encode(["status" => "exists"]);
-    } else {
-        echo json_encode(["status" => "available"]);
-    }
-    $stmt->close();
+    echo ($stmt->get_result()->num_rows > 0) ? "taken" : "available";
     exit;
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Customer Registration</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: 'Poppins', sans-serif;
-            background: rgba(0, 0, 0, 0.5);
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            min-height: 100vh;
-            overflow-y: auto;
-            padding-top: 40px;
-            padding-bottom: 40px;
-        }
-        .bg-video {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            object-fit: cover;
-            z-index: -2;
-        }
-.register-box {
-    background: linear-gradient(
-        135deg,
-        #ff0000, #ff7f00, #ffff00, #7fff00, #00ff00
-        );
-    border-radius: 12px;
-    padding: 30px;
-    text-align: center;
-    color: white;
-    width: 450px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.7);
-    margin-bottom: 40px;
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Register</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:'Poppins',sans-serif;
 }
 
-        h2 { margin-bottom: 20px; color: black; }
-        label {
-            display: block;
-            text-align: left;
-            font-size: 0.9rem;
-            margin: 5px 0 3px 0;
-            color: blue;
-        }
-        input, button {
-            width: 100%;
-            padding: 12px;
-            margin: 5px 0 15px 0;
-            border-radius: 5px;
-            border: none;
-            font-size: 1rem;
-        }
-        input {
-            background: rgba(255, 255, 255, 0.8);
-            color: #333;
-        }
-        button {
-            background: linear-gradient(90deg, #ff512f, #dd2476);
-            color: white; cursor: pointer;
-        }
-        button:hover {
-            background: linear-gradient(90deg, #dd2476, #ff512f);
-        }
-        .message { color: green; font-size: 0.9rem; }
-        .success { color: #00ff88; font-size: 0.9rem; }
-        .availability { font-size: 0.8rem; margin-top: -10px; margin-bottom: 10px; }
-        .available { color: green; }
-        .exists { color: red; }
-        .back-btn {
-            position: absolute;
-            top: 20px;
-            right: 30px;
-            background: #111;
-            padding: 10px 20px;
-            color: #ffde59;
-            border-radius: 6px;
-            font-weight: bold;
-            text-decoration: none;
-                       transition: 0.3s ease;
-        }
-        .back-btn:hover {
-            box-shadow: 0 0 20px #ff512f, 0 0 40px #dd2476, 0 0 60px #ff512f;
-        }
-        .password-rules {
-            text-align: left;
-            font-size: 0.8rem;
-            color: blue;
-            margin-top: -5px;
-            margin-bottom: 10px;
-        }
-        .password-rules li { list-style: none; }
-        .valid { color: yellow; }
-        .invalid { color: black; }
-        .popup {
-            position: fixed;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            background: #222;
-            color: #fff;
-            padding: 30px;
-            border-radius: 10px;
-            text-align: center;
-            box-shadow: 0 0 20px #000;
-            z-index: 1000;
-        }
-    </style>
+body{
+    background:#e8f0f7;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    padding:15px;
+}
+
+.register-box{
+    background:#ffffff;
+    border:1px solid #d7e0ea;
+    padding:25px;
+    border-radius:14px;
+    width:100%;
+    max-width:420px;
+    box-shadow:0 4px 15px rgba(0,0,0,0.06);
+    position:relative;
+}
+
+.back-btn{
+    position:absolute;
+    top:15px;
+    right:15px;
+    background:#1e3c57;
+    color:#fff;
+    border:none;
+    font-size:14px;
+    padding:8px 16px;
+    border-radius:8px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    font-weight:600;
+}
+
+.back-btn i{
+    font-size:16px;
+}
+
+.back-btn:hover{
+    background:#264a6e;
+}
+
+h2{
+    text-align:center;
+    margin-top:40px;
+    margin-bottom:20px;
+    font-size:1.7rem;
+    color:#1e3c57;
+    font-weight:700;
+}
+
+.form-group{
+    margin-bottom:14px;
+    display:flex;
+    flex-direction:column;
+}
+
+label{
+    margin-bottom:6px;
+    font-weight:500;
+    color:#1e3c57;
+    font-size:0.95rem;
+}
+
+input{
+    padding:11px;
+    border-radius:8px;
+    border:1px solid #b9c7d8;
+    font-size:0.95rem;
+    outline:none;
+    background:#fff;
+    color:#000;
+}
+
+input:focus{
+    border-color:#0072ff;
+}
+
+input::placeholder{
+    color:#9bb1c7;
+    font-size:0.9rem;
+}
+
+button[type="submit"]{
+    margin-top:8px;
+    width:100%;
+    padding:12px;
+    border:none;
+    border-radius:8px;
+    font-size:1rem;
+    background:#1e3c57;
+    color:#fff;
+    font-weight:600;
+    cursor:pointer;
+}
+
+button[type="submit"]:hover{
+    background:#264a6e;
+}
+
+.live-msg{
+    font-size:0.8rem;
+    margin-top:4px;
+}
+
+.taken{color:#ff6b6b;}
+.available{color:#32cd32;}
+
+.inline-error{
+    background:rgba(255,0,0,0.08);
+    padding:10px;
+    text-align:center;
+    border-radius:8px;
+    margin-bottom:15px;
+    color:#c40000;
+    font-weight:600;
+    font-size:0.9rem;
+}
+
+.popup{
+    position:fixed;
+    inset:0;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    background:rgba(0,0,0,0.55);
+    z-index:9999;
+}
+
+.popup-content{
+    background:#ffffff;
+    padding:22px 26px;
+    border-radius:14px;
+    text-align:center;
+    max-width:360px;
+    width:90%;
+    color:#1e3c57;
+    font-weight:600;
+    box-shadow:0 4px 18px rgba(0,0,0,0.18);
+}
+
+.popup-btn{
+    margin-top:15px;
+    padding:9px 20px;
+    background:#1e3c57;
+    border-radius:8px;
+    border:none;
+    color:#fff;
+    cursor:pointer;
+    font-size:0.95rem;
+    font-weight:600;
+}
+
+.popup-btn:hover{
+    background:#264a6e;
+}
+
+@media(max-width:480px){
+    .register-box{
+        padding:20px;
+        border-radius:12px;
+        max-width:100%;
+    }
+    h2{
+        font-size:1.5rem;
+    }
+    button[type="submit"]{
+        font-size:0.95rem;
+        padding:11px;
+    }
+    .back-btn{
+        padding:7px 14px;
+        font-size:13px;
+    }
+}
+</style>
 </head>
 <body>
-<video autoplay muted loop playsinline class="bg-video">
-    <source src="../videos/bus.mp4" type="video/mp4">
-</video>
-
-<a href="login.php" class="back-btn">Back to Login Page</a>
 
 <div class="register-box">
-    <h2>Customer Registration</h2>
-    <?php if ($message): ?>
-        <p class="<?php echo (strpos($message, 'successful') !== false) ? 'success' : 'message'; ?>">
-            <?php echo htmlspecialchars($message); ?>
-        </p>
-    <?php endif; ?>
-    <form method="post" onsubmit="return validateForm()">
-        <label for="first_name">First Name</label>
-        <input type="text" id="first_name" name="first_name" placeholder="Enter First Name" required>
 
-        <label for="last_name">Last Name</label>
-        <input type="text" id="last_name" name="last_name" placeholder="Enter Last Name" required>
+<button class="back-btn" onclick="window.location.href='index.php'">
+    <i class="fa fa-arrow-left"></i> Back
+</button>
 
-        <label for="username">Username</label>
-        <input type="text" id="username" name="username" placeholder="Enter Username" required>
-        <div id="username_status" class="availability"></div>
+<h2>Create Account</h2>
 
-        <label for="email">Email</label>
-        <input type="email" id="email" name="email" placeholder="Enter Email" required>
-        <div id="email_status" class="availability"></div>
+<?php if (!empty($inline_error)): ?>
+<div class="inline-error"><?php echo $inline_error; ?></div>
+<?php endif; ?>
 
-        <label for="phone">Phone Number</label>
-        <input type="text" id="phone" name="phone" placeholder="Enter Phone Number" required pattern="[0-9]{10}" title="Enter 10-digit phone number">
-        <div id="phone_status" class="availability"></div>
+<form method="POST" id="registerForm">
 
-        <label for="password">Password</label>
-        <input type="password" id="password" name="password" placeholder="Enter Password" required>
-        <ul class="password-rules" id="passwordRules">
-            <li id="length" class="invalid">• At least 8 characters</li>
-            <li id="lowercase" class="invalid">• At least one lowercase letter</li>
-            <li id="uppercase" class="invalid">• At least one uppercase letter</li>
-            <li id="number" class="invalid">• At least one number</li>
-            <li id="special" class="invalid">• At least one special character</li>
-        </ul>
+    <div class="form-group">
+        <label>First Name:</label>
+        <input type="text" name="first_name" placeholder="Enter first name" required>
+    </div>
 
-        <label for="confirm_password">Confirm Password</label>
-        <input type="password" id="confirm_password" name="confirm_password" placeholder="Confirm Password" required>
+    <div class="form-group">
+        <label>Last Name:</label>
+        <input type="text" name="last_name" placeholder="Enter last name" required>
+    </div>
 
-        <button type="submit">Sign Up</button>
-    </form>
+    <div class="form-group">
+        <label>Email:</label>
+        <input type="email" name="email" id="email" placeholder="Enter email" required>
+        <span id="email-msg" class="live-msg"></span>
+    </div>
+
+    <div class="form-group">
+        <label>Phone Number:</label>
+        <input type="text" name="phone" id="phone" placeholder="Enter phone number" required>
+        <span id="phone-msg" class="live-msg"></span>
+    </div>
+
+    <div class="form-group">
+        <label>Username:</label>
+        <input type="text" name="username" id="username" placeholder="Enter username" required>
+        <span id="username-msg" class="live-msg"></span>
+    </div>
+
+    <div class="form-group">
+        <label>Password:</label>
+        <input type="password" name="password" id="password" placeholder="Enter password" required>
+    </div>
+
+    <div class="form-group">
+        <label>Confirm Password:</label>
+        <input type="password" name="confirm_password" id="confirm_password" placeholder="Confirm password" required>
+        <span id="password-msg" class="live-msg"></span>
+    </div>
+
+    <button type="submit">Register</button>
+</form>
 </div>
 
-<?php if ($registration_success): ?>
-<div class="popup" id="successPopup">
-    <h3>🎉 Registration Successful!</h3>
-    <p>Redirecting to login page in <span id="countdown">5</span> seconds...</p>
+<?php if ($show_popup): ?>
+<div class="popup" id="popupBox">
+    <div class="popup-content">
+        <p><?php echo $popup_message; ?></p>
+        <button class="popup-btn" onclick="closePopup()">OK</button>
+    </div>
 </div>
-<script>
-    let counter = 5;
-    const countdownEl = document.getElementById('countdown');
-    const interval = setInterval(() => {
-        counter--;
-        countdownEl.textContent = counter;
-        if (counter <= 0) {
-            clearInterval(interval);
-            window.location.href = "login.php";
-        }
-    }, 1000);
-</script>
 <?php endif; ?>
 
 <script>
-    const passwordInput = document.getElementById('password');
-    const confirmPasswordInput = document.getElementById('confirm_password');
-    const rules = {
-        length: document.getElementById('length'),
-        lowercase: document.getElementById('lowercase'),
-        uppercase: document.getElementById('uppercase'),
-        number: document.getElementById('number'),
-        special: document.getElementById('special')
-    };
+function closePopup() {
+    document.getElementById("popupBox").style.display = "none";
+}
 
-    passwordInput.addEventListener('input', function () {
-        const value = passwordInput.value;
-        rules.length.className = value.length >= 8 ? 'valid' : 'invalid';
-        rules.lowercase.className = /[a-z]/.test(value) ? 'valid' : 'invalid';
-        rules.uppercase.className = /[A-Z]/.test(value) ? 'valid' : 'invalid';
-        rules.number.className = /\d/.test(value) ? 'valid' : 'invalid';
-        rules.special.className = /[\W_]/.test(value) ? 'valid' : 'invalid';
+function liveCheck(value, type, msgBox) {
+    let formData = new FormData();
+    formData.append("live_check", true);
+    formData.append("value", value);
+    formData.append("type", type);
+
+    fetch("", { method: "POST", body: formData })
+    .then(res => res.text())
+    .then(data => {
+        if (data === "taken") {
+            msgBox.innerHTML = "❌ Already taken";
+            msgBox.className = "live-msg taken";
+        } else {
+            msgBox.innerHTML = "✔ Available";
+            msgBox.className = "live-msg available";
+        }
     });
+}
 
-    function validateForm() {
-        if (passwordInput.value !== confirmPasswordInput.value) {
-            alert("Passwords do not match!");
-            return false;
-        }
-        const allValid = Object.values(rules).every(rule => rule.classList.contains('valid'));
-        if (!allValid) {
-            alert("Password does not meet all the requirements!");
-            return false;
-        }
+document.getElementById("email").addEventListener("input", function() {
+    liveCheck(this.value, "email", document.getElementById("email-msg"));
+});
+document.getElementById("phone").addEventListener("input", function() {
+    liveCheck(this.value, "phone", document.getElementById("phone-msg"));
+});
+document.getElementById("username").addEventListener("input", function() {
+    liveCheck(this.value, "username", document.getElementById("username-msg"));
+});
+
+const passwordInput = document.getElementById("password");
+const confirmInput = document.getElementById("confirm_password");
+const passwordMsg = document.getElementById("password-msg");
+
+function validatePasswordFields() {
+    const password = passwordInput.value;
+    const confirm = confirmInput.value;
+    const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@.#$!%*?&])[A-Za-z\d@.#$!%*?&]{8,}$/;
+
+    if (!regex.test(password)) {
+        passwordMsg.innerHTML = "Password must be 8+ chars, include upper, lower, number, and special symbol.";
+        passwordMsg.className = "live-msg taken";
+        return false;
+    }
+
+    if (confirm && password !== confirm) {
+        passwordMsg.innerHTML = "Password and Confirm Password do not match.";
+        passwordMsg.className = "live-msg taken";
+        return false;
+    }
+
+    if (password && confirm && password === confirm) {
+        passwordMsg.innerHTML = "Password looks good.";
+        passwordMsg.className = "live-msg available";
         return true;
     }
 
-    function checkAvailability(field, value) {
-        if (!value) {
-            document.getElementById(field + "_status").innerHTML = "";
-            return;
-        }
-        fetch("?check_field=" + field + "&value=" + encodeURIComponent(value))
-            .then(res => res.json())
-            .then(data => {
-                const statusEl = document.getElementById(field + "_status");
-                if (data.status === "exists") {
-                    statusEl.innerHTML = field.charAt(0).toUpperCase() + field.slice(1) + " already exists.";
-                    statusEl.className = "availability exists";
-                } else if (data.status === "available") {
-                    statusEl.innerHTML = field.charAt(0).toUpperCase() + field.slice(1) + " is available.";
-                    statusEl.className = "availability available";
-                } else {
-                    statusEl.innerHTML = "";
-                }
-            });
-    }
+    passwordMsg.innerHTML = "";
+    passwordMsg.className = "live-msg";
+    return true;
+}
 
-    document.getElementById('username').addEventListener('blur', e => checkAvailability('username', e.target.value));
-    document.getElementById('email').addEventListener('blur', e => checkAvailability('email', e.target.value));
-    document.getElementById('phone').addEventListener('blur', e => checkAvailability('phone', e.target.value));
+passwordInput.addEventListener("input", validatePasswordFields);
+confirmInput.addEventListener("input", validatePasswordFields);
+
+document.getElementById("registerForm").addEventListener("submit", function(e) {
+    if (!validatePasswordFields()) {
+        e.preventDefault();
+    }
+});
+
+<?php if ($show_popup && strpos($popup_message, "Successful") !== false): ?>
+let sec = <?php echo $redirect_time; ?>;
+let cd = document.getElementById("countdown");
+let timer = setInterval(() => {
+    sec--;
+    cd.textContent = sec;
+    if(sec <= 0){
+        clearInterval(timer);
+        window.location.href = "login.php";
+    }
+}, 1000);
+<?php endif; ?>
 </script>
+
 </body>
 </html>
