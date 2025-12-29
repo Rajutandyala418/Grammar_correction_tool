@@ -16,3 +16,8 @@ take the user speech as input as well as determine the pos tags of the output to
 
 In the dashboard there is a history page which store every input and output for future use as well as profile page to update the profile details such as firstname,lastname,email and mobile number.
 
+https://github.com/Rajutandyala418/grammar_tool
+
+In this repository contains app.py code which is used to run the flask server either online or localhost through command prompt and then intergrate that url into the dashboard page for processing the text and translating the text and other processess.
+
+As well as requirements file to download the required packages and libraries to run this code safely.
